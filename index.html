@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>مدير مراسلات واتساب الاحترافي</title>
+<style>
+:root { --bg: #0b141a; --card: #202c33; --primary: #00a884; --text: #e9edef; --border: #303d42; }
+body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 15px; }
+.container { max-width: 800px; margin: auto; }
+.card { background: var(--card); padding: 15px; border-radius: 10px; margin-bottom: 15px; border: 1px solid var(--border); }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+textarea, input, select { width: 100%; padding: 10px; margin: 5px 0; border-radius: 5px; border: 1px solid var(--border); background: #111b21; color: white; box-sizing: border-box; }
+button { cursor: pointer; padding: 10px 15px; border: none; border-radius: 5px; background: var(--primary); color: white; font-weight: bold; margin: 3px; }
+button:hover { opacity: 0.9; }
+.btn-danger { background: #c0392b; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+th, td { padding: 10px; border: 1px solid var(--border); text-align: center; }
+.progress-container { background: #333; height: 25px; border-radius: 10px; overflow: hidden; margin: 10px 0; position: relative; }
+.progress-bar { height: 100%; background: var(--primary); width: 0%; transition: 0.3s; }
+.progress-text { position: absolute; width: 100%; text-align: center; line-height: 25px; font-weight: bold; font-size: 14px; }
+
+/* ألوان الصفوف */
+.row-sent { background-color: rgba(46, 204, 113, 0.2); }
+.row-skipped { background-color: rgba(230, 126, 34, 0.2); }
+.current-row { border: 2px solid var(--primary) !important; font-weight: bold; outline: 2px solid var(--primary); }
+</style>
+</head>
+<body>
+
+<div class="container">
+<h2>مدير المراسلات</h2>
+
+<div class="card">
+<div id="statsText">الإجمالي: 0 | تم الإرسال: 0 | تم التخطي: 0 | لم يبدأ: 0</div>
+<div class="progress-container"><div id="progress" class="progress-bar"></div><div id="progressText" class="progress-text">0%</div></div>
+</div>
+
+<div class="card">
+<div class="grid">
+<textarea id="names" placeholder="أسماء الطلاب"></textarea>
+<textarea id="phones" placeholder="أرقام الهواتف"></textarea>
+</div>
+<button onclick="addStudents()">إضافة الطلاب</button>
+<button class="btn-danger" onclick="clearList()">مسح القائمة</button>
+</div>
+
+<div class="card">
+<textarea id="message" placeholder="الرسالة (استخدم {name})" onchange="saveSettings()"></textarea>
+<div style="display:flex; flex-wrap:wrap; justify-content: center;">
+<button onclick="startMessaging()">ابدأ</button>
+<button onclick="changeIndex(-1)">السابق</button>
+<button onclick="changeIndex(1)">التالي</button>
+<button onclick="handleAction('تم الإرسال')">تم الإرسال</button>
+<button onclick="handleAction('تم التخطي')">تم التخطي</button>
+</div>
+</div>
+
+<div class="card">
+<input type="text" id="search" placeholder="بحث بالاسم أو الرقم..." oninput="renderTable()">
+<select id="filter" onchange="renderTable()">
+<option value="الكل">جميع الطلاب</option>
+<option value="لم يبدأ">لم يبدأ</option>
+<option value="تم الإرسال">تم الإرسال</option>
+<option value="تم التخطي">تم التخطي</option>
+</select>
+<table>
+<thead><tr><th>الاسم</th><th>الرقم</th><th>الحالة</th></tr></thead>
+<tbody id="tbody"></tbody>
+</table>
+</div>
+</div>
+
+<script>
+let state = JSON.parse(localStorage.getItem('appData')) || { students: [], message: '', currentIndex: 0 };
+
+function addStudents() {
+const names = document.getElementById('names').value.split('\n').filter(x => x.trim());
+const phones = document.getElementById('phones').value.split('\n').map(p => p.replace(/[^\d+]/g, '')).filter(x => x);
+if (names.length !== phones.length) return alert("خطأ: عدد الأسماء لا يساوي عدد الأرقام");
+let addedCount = 0, duplicateCount = 0;
+names.forEach((name, i) => {
+if (!state.students.some(s => s.phone === phones[i])) {
+state.students.push({ name: name.trim(), phone: phones[i], status: 'لم يبدأ' });
+addedCount++;
+} else { duplicateCount++; }
+});
+document.getElementById('names').value = ''; document.getElementById('phones').value = '';
+save();
+alert(تمت الإضافة: ${addedCount} | مكرر: ${duplicateCount});
+}
+
+function renderTable() {
+const tbody = document.getElementById('tbody');
+const searchTerm = document.getElementById('search').value.toLowerCase();
+const filterTerm = document.getElementById('filter').value;
+tbody.innerHTML = '';
+
+state.students.forEach((s, i) => {
+if ((filterTerm === 'الكل' || s.status === filterTerm) &&
+(s.name.toLowerCase().includes(searchTerm) || s.phone.includes(searchTerm))) {
+const tr = document.createElement('tr');
+if (i === state.currentIndex) tr.className = 'current-row';
+if (s.status === 'تم الإرسال') tr.classList.add('row-sent');
+if (s.status === 'تم التخطي') tr.classList.add('row-skipped');
+
+tr.innerHTML = <td&gt;${s.name}</td><td>${s.phone}&lt;/td&gt;&lt;td&gt;${s.status}</td>`;
+tbody.appendChild(tr);
+}
+});
+updateStats();
+}
+
+function startMessaging(index = state.currentIndex) {
+if(index < 0 || index >= state.students.length) return alert("انتهت القائمة!");
+state.currentIndex = index;
+const s = state.students[index];
+const msg = state.message.replace(/{name}/g, s.name);
+window.open(https://wa.me/${s.phone}?text=${encodeURIComponent(msg)}, '_blank');
+save();
+}
+
+function handleAction(status) {
+if (state.students.length === 0) return;
+state.students[state.currentIndex].status = status;
+if (state.currentIndex < state.students.length - 1) {
+state.currentIndex++;
+startMessaging(state.currentIndex);
+} else {
+alert("تم الوصول إلى نهاية القائمة!");
+save();
+}
+}
+
+function changeIndex(dir) {
+state.currentIndex = Math.max(0, Math.min(state.students.length - 1, state.currentIndex + dir));
+save();
+}
+
+function clearList() {
+if(confirm("هل أنت متأكد من مسح جميع الطلاب؟")) {
+state.students = []; state.currentIndex = 0; save();
+}
+}
+
+function updateStats() {
+const total = state.students.length;
+const sent = state.students.filter(s => s.status === 'تم الإرسال').length;
+const skipped = state.students.filter(s => s.status === 'تم التخطي').length;
+const none = state.students.filter(s => s.status === 'لم يبدأ').length;
+const pct = total ? Math.round((sent / total) * 100) : 0;
+document.getElementById('progress').style.width = pct + '%';
+document.getElementById('progressText').textContent = pct + '%';
+document.getElementById('statsText').textContent = الإجمالي:${total} | تم الإرسال: {skipped} | لم يبدأ: ${none}`;
+}
+
+function saveSettings() { state.message = document.getElementById('message').value; save(); }
+function save() { localStorage.setItem('appData', JSON.stringify(state)); renderTable(); }
+
+document.getElementById('message').value = state.message;
+renderTable();
+
+document.addEventListener('keydown', (e) => {
+if (e.key === 'Enter') handleAction('تم الإرسال');
+if (e.key === 'Delete') handleAction('تم التخطي');
+if (e.key === 'ArrowRight') changeIndex(1);
+if (e.key === 'ArrowLeft') changeIndex(-1);
+});
+</script>
+</body>
+</html>
